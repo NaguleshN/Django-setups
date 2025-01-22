@@ -1,0 +1,117 @@
+Celery Task Setup
+
+run: 
+worker: celery -A DigitalCapsule worker --pool=solo -l info
+beat: celery -A DigitalCapsule beat -l info
+
+settings.py
+
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'django-db'
+
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+CELERY_BEAT_SCHEDULER='django_celery_beat.schedulers:DatabaseScheduler'
+
+
+INSTALLED_APPS = [
+'django_celery_beat',
+'django_celery_results',
+]
+
+
+project/__init__.py:
+
+from .celery import app as celery_app
+
+__all__ = ("celery_app",)
+
+
+project/celery.py:
+
+from __future__ import absolute_import, unicode_literals
+import os
+from celery import Celery
+
+# Set the default Django settings module for the 'celery' program.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'DigitalCapsule.settings')
+
+app = Celery('DigitalCapsule')
+
+# Using a string here means the worker doesn't have to serialize
+# the configuration object to child processes.
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+
+app.conf.enable_utc = False
+
+app.conf.update(timezone='Asia/Kolkata')
+
+app.conf.update(
+    broker_connection_retry_on_startup=True
+)
+
+# Discover tasks in installed apps
+app.autodiscover_tasks()
+
+@app.task(bind=True)
+def debug_task(self):
+    print(f'Request: {self.request!r}')
+
+
+app/tasks.py:
+
+from celery import shared_task
+from datetime import datetime
+import requests
+
+@shared_task
+def send_browser_notification():
+    print("hello guys")
+
+#tasks to create cron jobs / Schedule:
+
+from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
+import json
+from .models import *
+from django.utils import timezone
+
+@shared_task
+def create_dynamic_crontab_task(capsule_id):
+    
+    capsule = Capsule.objects.get(id=capsule_id)
+    unlock_date = timezone.localtime(capsule.unlock_date)
+    cap_hour = unlock_date.hour
+    cap_minute = unlock_date.minute
+    cap_day_of_month = unlock_date.day
+    cap_month_of_year = unlock_date.month
+
+    schedule, created = CrontabSchedule.objects.get_or_create(
+        minute=cap_minute,
+        hour=cap_hour,
+        day_of_week="*", 
+        day_of_month=str(cap_day_of_month),  
+        month_of_year=str(cap_month_of_year)
+    )
+
+    task_name = "Capsule.tasks.send_email"
+    task_obj =PeriodicTask.objects.create(
+        crontab=schedule,
+        name=f"Send browser notification for {capsule_id}",
+        task=task_name
+    )
+    task_obj_id = task_obj.id
+    task_obj.args = json.dumps([capsule_id, task_obj_id])
+    task_obj.save()
+
+    print(f"Periodic task '{task_name}' created successfully.")
+
+#schedule end
+
+views.py:
+from .tasks import *
+send_browser_notification.delay()
