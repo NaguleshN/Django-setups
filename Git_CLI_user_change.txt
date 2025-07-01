@@ -1,0 +1,27 @@
+🔹 Unset user: 
+
+git config --global --unset user.name
+git config --global --unset user.email
+==================================================
+
+🔹 Global (all repositories):
+
+git config --global user.name "Your New Name"
+git config --global user.email "your-new-email@example.com"
+==================================================
+
+🔹 Local (this repo only):
+
+git config user.name "Your New Name"
+git config user.email "your-new-email@example.com"
+====================================================
+
+🔹 Check Current Git Config
+
+git config --global user.name
+git config --global user.email
+
+# For local repo only
+git config user.name
+git config user.email
+====================================================
